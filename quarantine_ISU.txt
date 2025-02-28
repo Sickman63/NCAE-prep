@@ -1,0 +1,57 @@
+#!/bin/bash
+
+# Color definitions for output
+RED="\033[0;31m"
+GREEN="\033[0;32m"
+RESET_COLOR="\033[0m"
+
+# Check the first argument for the action to perform
+case $1 in
+"enable")
+    # Loop through each network interface and disable it
+    for interface in /sys/class/net/*; do
+        ifconfig `basename $interface` down 
+    done
+
+    # Check if the previous command was successful
+    if [ $? -eq 0 ]; then
+        echo -e "Quarantine ${GREEN}enabled${RESET_COLOR}: All network adapters have been shut down!"
+    else 
+        echo "Try using sudo quarantine enable"
+    fi
+;;
+"disable")
+    # Loop through each network interface and enable it
+    for interface in /sys/class/net/*; do
+        ifconfig `basename $interface` up
+    done
+
+    # Check if the previous command was successful
+    if [ $? -eq 0 ]; then
+        echo -e "Quarantine ${RED}Disabled${RESET_COLOR}: All network adapters are now up!"
+    else 
+        echo "Try using sudo quarantine disable"
+    fi
+    
+;;
+
+"--help")
+    # Display help information if requested
+    cat /opt/bluekit/resources/useless/quarantine_help
+    echo
+    echo
+
+;;
+
+"-h")
+    # Display help information if requested
+    cat /opt/bluekit/resources/useless/quarantine_help
+    echo 
+    echo
+;;
+*)  
+    # Default case if no valid arguments are provided
+    echo "usage: quarantine enable"
+    echo "usage: quarantine disable"
+;;
+esac

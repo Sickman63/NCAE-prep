@@ -1,0 +1,214 @@
+#!/bin/bash
+
+# =====
+# IMPORTS
+# =====
+
+. /opt/bluekit/resources/utilities/print
+. /opt/bluekit/resources/utilities/colors
+. /opt/bluekit/resources/utilities/sys
+. /opt/bluekit/resources/utilities/net
+
+# =====
+# VARS
+# =====
+
+SCORING_PUB_KEY="$(head -n 1 /opt/bluekit/resources/creds/pub_key_scoring)"
+SCORING_FTP_HASH="$(head -n 1 /opt/bluekit/resources/creds/ftp_pass_hash_scoring)"
+DISABLED_SHELL_BIN_NOLOGIN="/usr/bin/nologin"
+DISABLED_SHELL_FALSE="/bin/false"
+DISABLED_SHELL_SBIN_NOLOGIN="/usr/sbin/nologin"
+
+SECURED_SHELLS=($DISABLED_SHELL_BIN_NOLOGIN $DISABLED_SHELL_FALSE $DISABLED_SHELL_SBIN_NOLOGIN)
+
+ROOT_SECURE=false
+
+# ssh
+
+ROOT_LOGIN=false
+PUBKEY=false
+PASS_AUTH=false
+DEF_PORT=false
+
+# =====
+# HOLY CODE
+# =====
+
+# Print the header
+function printHeaderFile () {
+    cat /opt/bluekit/resources/useless/banners_helpers/lockdown_header
+}
+
+function checkSSHKeys (){
+    printFormattedHeader "SSH KEYS"
+
+    for X in $(cut -f6 -d ':' /etc/passwd | sort | uniq); do
+        keynum=1
+        if [ -s "${X}/.ssh/authorized_keys" ]; then
+            printCritical "ACTIVE KEYS: ${CYAN}$(basename $X) has active keys..."
+            cat "${X}/.ssh/authorized_keys" | while read key; do
+                if [[ "$key" == *'command="blueshell"'* ]]; then
+                    print "\t[KEY$keynum] ${BRIGHT_BLUE}BLUESHELL CONFIGURED: ${GREEN}YES"
+                else
+                    print "\t[KEY$keynum] ${BRIGHT_BLUE}BLUESHELL CONFIGURED: ${RED}NO"
+                fi
+                case $key in 
+                    *"$SCORING_PUB_KEY"*)
+                        print "\t    ${YELLOW}╚═> ${GREEN}Scoring Key Found: ${GREEN}$key\n"
+                    ;;
+                    *)
+                        print "\t    ${YELLOW}╚═> ${RED}Suspicious Key Found: ${RED}$key\n"
+                    ;;
+                esac
+                echo ""
+                keynum=$((keynum+1))
+            done
+        fi
+    done
+}
+
+function checkSSH() {
+    printFormattedHeader "SSH CONFIGURATION"
+
+    print "${RED}(NOT CONFIGURED)${RESET_COLOR} = Config is commented and may be running default. Set value statically.\n"
+
+    if getSSHStatus; then
+        printCritical "SSH is active" 
+        cat /etc/ssh/sshd_config | while read config_line; do
+            case $(echo -n $config_line | tr '[:upper:]' '[:lower:]') in
+                *"passwordauthentication "*)
+                    if [[ "$config_line" == *"#"* ]]; then
+                        print "\t    ${YELLOW}╚═> ${RED}(NOT CONFIGURED)${RESET_COLOR} PASSWORD AUTHENTICATION: $(echo $config_line | awk -F " " '{print toupper($2)}')"
+                    else
+                        print "\t    ${YELLOW}╚═> PASSWORD AUTHENTICATION: $(echo $config_line | awk -F " " '{print toupper($2)}')"
+                    fi
+                ;;
+                *"pubkeyauthentication "*)
+                    if [[ "$config_line" == *"#"* ]]; then
+                        print "\t    ${YELLOW}╚═> ${RED}(NOT CONFIGURED)${RESET_COLOR} PUBKEY AUTHENTICATION: $(echo $config_line | awk -F " " '{print toupper($2)}')"
+                    else
+                        print "\t    ${YELLOW}╚═> PUBKEY AUTHENTICATION: $(echo $config_line | awk -F " " '{print toupper($2)}')"
+                    fi
+                ;;
+                *"port "*)
+                    if [[ "$config_line" == *"#"* ]]; then
+                        print "\t    ${YELLOW}╚═> ${RED}(NOT CONFIGURED)${RESET_COLOR} ACTIVE PORT: $(echo $config_line | awk -F " " '{print toupper($2)}')"
+                    else
+                        print "\t    ${YELLOW}╚═> ACTIVE PORT: $(echo $config_line | awk -F " " '{print toupper($2)}')"
+                    fi
+                ;;
+                *"permitrootlogin p"*) # don't ask
+                ;;
+                *"permitrootlogin "*)
+                    if [[ "$config_line" == *"#"* ]]; then
+                        print "\t    ${YELLOW}╚═> ${RED}(NOT CONFIGURED)${RESET_COLOR} PERMIT ROOT LOGIN: $(echo $config_line | awk -F " " '{print toupper($2)}')"
+                    else
+                        print "\t    ${YELLOW}╚═> PERMIT ROOT LOGIN $(echo $config_line | awk -F " " '{print toupper($2)}')"
+                    fi
+                ;;
+            esac
+        done
+
+        checkSSHKeys
+    else
+        printSecure  "SSH is not active"
+    fi
+}
+
+function checkAccountLock() {
+    if accountLock $1; then
+        print "\t    ${YELLOW}╚═> ACCOUNT LOCK: ${GREEN}LOCKED"
+    else
+        print "\t    ${YELLOW}╚═> ACCOUNT LOCK: ${RED}UNLOCKED"
+        printPasswordInfo $1
+    fi
+}
+
+function checkAccountAccessibility () {
+    loginShell=$(grep $1:x /etc/passwd | awk -F ":" '{print $7}')
+
+    if $(grep -Fxq "$loginShell" /etc/shells); then
+        printCritical "$1 not secured. Current shell access is ${RED}${loginShell}"
+        checkAccountLock $1
+        return 1
+    fi
+    printSecure "$1 is secure. Login shell is ${GREEN}$loginShell"
+    checkAccountLock $1
+    return 0
+}
+
+function printPasswordInfo () {
+    if [ "$(getPasswordHash $1)" ==  "$SCORING_FTP_HASH" ]; then
+        print "\t    ${YELLOW}╚═> PASSWORD HASH (FTP SCORING HASH): ${GREEN} $(getPasswordHash $1)"
+        print "\t\t    ${YELLOW}╚═> PASSWORD ID: ${BRIGHT_BLUE} $(getPasswordID $1)"
+    else
+        print "\t    ${YELLOW}╚═> PASSWORD HASH: ${BRIGHT_BLUE} $(getPasswordHash $1)"
+        print "\t\t    ${YELLOW}╚═> PASSWORD ID: ${BRIGHT_BLUE} $(getPasswordID $1)"
+    fi
+}
+
+function getAccountInformation () {
+    if sudoer $1; then
+        print "\t    ${YELLOW}╚═> SUDO STATUS: ${RED}Sudo Access"
+    else
+        print "\t    ${YELLOW}╚═> SUDO STATUS: ${GREEN}No Sudo Access"
+    fi
+    
+    print "\t    ${YELLOW}╚═> GROUPS: ${BRIGHT_BLUE} $(getGroups $1)"
+}
+
+# Check for other accessible accounts on the system
+function checkAccounts () {
+    printFormattedHeader "SYSTEM ACCOUNTS"
+
+    availableUsers="root $(cat /etc/passwd | awk -F ":" '{if ($4 >= 1000 && $4 <= 60000) print $1}')"
+    numUsers=$(wc -w <<< "$availableUsers") 
+
+    for user in $availableUsers; do
+        echo ""
+        checkAccountAccessibility $user
+        getAccountInformation $user
+    done
+}
+
+function checkPorts (){
+    printFormattedHeader "LISTENING PORTS"
+    if ! lsof -nP -iTCP -sTCP:LISTEN; then
+        print "\t${RED}Error retrieving listening ports.${RESET_COLOR}"
+    fi
+
+    printFormattedHeader "ACTIVE PORTS"
+    if ! ss -tupln; then
+        print "\t${RED}Error retrieving active ports.${RESET_COLOR}"
+    fi
+}
+
+# =====
+#  Main Execution 
+# =====
+
+if checkPriv; then
+    clear
+    printHeaderFile
+
+    printSystemInfo
+    
+    case $INIT in
+        # systemd 
+        "systemd")
+            checkAccounts
+            checkSSH
+            checkFirewall
+            checkPorts
+            ;;
+        "init")
+            checkAccounts
+            checkSSH
+            checkFirewall
+            checkPorts
+            ;;
+    esac
+    
+else
+    print "${RED}[X][CRITICAL]${RESET_COLOR} Please run ${YELLOW}Lockdown${RESET_COLOR} as ${RED}root"
+fi

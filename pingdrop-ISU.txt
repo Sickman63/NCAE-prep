@@ -1,0 +1,81 @@
+#!/bin/bash
+
+# This script will block ICMP requests, preventing some network probing 
+
+# Check if two arguments are passed
+if [ -z "$2" ]; then
+    case $1 in
+        'enable')
+            # Check if pings are blocked
+            if ! iptables -S | grep -- "-A INPUT -p icmp -m icmp --icmp-type 8 -j DROP"; then
+                iptables -A INPUT -p icmp --icmp-type echo-request -j DROP
+            fi
+
+            # Check if destination-unreachable responses are blocked
+            if ! iptables -S | grep -- "-A INPUT -p icmp -m icmp --icmp-type 3 -j DROP"; then
+                iptables -A INPUT -p icmp --icmp-type destination-unreachable -j DROP
+            fi
+
+            echo "Pingdrop is now enabled. ICMP pings are no longer responded to."
+        ;;
+        
+        'disable')  
+            # Check if pings are blocked
+            if iptables -S | grep -- "-A INPUT -p icmp -m icmp --icmp-type 8 -j DROP" > /dev/null; then
+                iptables -D INPUT -p icmp --icmp-type echo-request -j DROP
+            fi
+
+            # Check if destination-unreachable responses are blocked
+            if iptables -S | grep -- "-A INPUT -p icmp -m icmp --icmp-type 3 -j DROP" > /dev/null; then
+                iptables -D INPUT -p icmp --icmp-type destination-unreachable -j DROP
+            fi
+            
+            echo "Pingdrop is now disabled. ICMP pings are responded to."
+        ;;
+        
+        "--help" | "-h")
+            cat /opt/bluekit/resources/useless/pingdrop_help
+            echo
+        ;;
+        
+        *)
+            echo "usage: sudo pingdrop enable"
+            echo "usage: sudo pingdrop disable"
+        ;;
+    esac
+else
+    case $1 in
+        'enable')
+            # Check if pings are blocked
+            if ! iptables -S | grep -- "-A INPUT -p icmp -m icmp --icmp-type 8 -j DROP"; then
+                iptables -A INPUT -p icmp --icmp-type echo-request -j DROP
+            fi
+
+            # Check if destination-unreachable responses are blocked
+            if ! iptables -S | grep -- "-A INPUT -p icmp -m icmp --icmp-type 3 -j DROP"; then
+                iptables -A INPUT -p icmp --icmp-type destination-unreachable -j DROP
+            fi
+
+            echo "Pingdrop is now enabled. ICMP pings are no longer responded to."
+        ;;
+        
+        'disable')  
+            # Check if pings are blocked
+            if iptables -S | grep -- "-A INPUT -p icmp -m icmp --icmp-type 8 -j DROP" > /dev/null; then
+                iptables -D INPUT -p icmp --icmp-type echo-request -j DROP
+            fi
+
+            # Check if destination-unreachable responses are blocked
+            if iptables -S | grep -- "-A INPUT -p icmp -m icmp --icmp-type 3 -j DROP" > /dev/null; then
+                iptables -D INPUT -p icmp --icmp-type destination-unreachable -j DROP
+            fi
+            
+            echo "Pingdrop is now disabled. ICMP pings are responded to."
+        ;;
+        
+        *)
+            echo "usage: sudo pingdrop enable [IP]"
+            echo "usage: sudo pingdrop disable [IP]"
+        ;;
+    esac
+fi

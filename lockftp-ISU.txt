@@ -1,0 +1,61 @@
+#!/bin/bash
+
+FTP_USERS="./resources/creds/ftp_users"
+FTP_FILES="./resources/default/ftp_file_sanity"
+
+function backupSystem () {
+    # Create a backup directory and copy files to it
+    mkdir -p "$1"
+    cp -r /mnt/files "$1/files"
+
+    touch "$1/checksums"
+
+    # Generate checksums for each file in /mnt/files and save to the checksums file
+    for file in /mnt/files/*; do
+        sha256sum "$file" >> "$1/checksums"
+    done
+}
+
+function checkSystemUsers (){
+    # Check if users in the FTP_USERS file exist in /etc/passwd
+    while read -r user; do
+        if grep -q "$user" /etc/passwd; then
+            echo "User: $user is a valid user"
+            echo ""
+        else
+            echo "User: $user is NOT a valid user"
+            echo ""
+        fi
+    done < "$FTP_USERS"
+}
+
+function makeTestFiles (){
+    # Create test files as specified in the FTP_FILES file
+    while read -r file; do
+        touch "/mnt/files/$file"
+    done < "$FTP_FILES"
+}
+
+function auditFiles () {
+    # Audit files based on the provided checksum file
+    if ! diff -q "$1" /mnt/files; then
+        for file in /mnt/files/*; do
+            if ! grep -q "$(sha256sum "$file")" "$1"; then
+                echo "$file failed audit due to hash"
+            fi
+        done
+    else
+        for file in "$1"/*; do
+            if ! [ -f "/mnt/files/$(basename "$file")" ]; then
+                echo "$(basename "$file") is missing"
+            fi
+        done
+    fi
+}
+
+# Usage: Call functions as needed
+# Example:
+# backupSystem /backups
+# checkSystemUsers
+# makeTestFiles
+# auditFiles /backups/checksums
