@@ -101,12 +101,6 @@ install usb-storage /bin/true
 EOF
 execute update-initramfs -u
 
-# 8. Install and Configure AIDE (File Integrity Monitoring)
-execute apt install aide -y
-execute aideinit
-execute mv /var/lib/aide/aide.db.new /var/lib/aide/aide.db
-echo "0 5 * * * root /usr/bin/aide.wrapper --check" >> /etc/crontab
-
 # 9. Auditd Setup for System Auditing
 execute apt install auditd audispd-plugins -y
 cat <<EOF > /etc/audit/rules.d/hardening.rules
