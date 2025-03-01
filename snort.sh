@@ -20,8 +20,8 @@ apt install -y snort || { echo "Snort installation failed" | tee -a "$LOG_FILE";
 
 # 3. Configure network interface for monitoring
 # Assume eth0 is the monitoring interface (connected to SPAN port or Team Router)
-MONITOR_INTERFACE="eth0"
-INTERNAL_LAN="192.168.0.0/24"
+MONITOR_INTERFACE="eth1"  #check ethernet interface
+INTERNAL_LAN="192.168.12.0/24"
 EXTERNAL_LAN="172.18.0.0/16"
 SNORT_CONF="/etc/snort/snort.conf"
 
@@ -57,13 +57,38 @@ tar -xzf /tmp/community-rules.tar.gz -C /etc/snort/rules/ || { echo "Failed to e
 # 5. Create custom local rules for Blue Team assets
 echo "Creating custom Snort rules..." | tee -a "$LOG_FILE"
 cat > /etc/snort/rules/local.rules << EOF
-# Custom rules for N-CAE Cyber Games Blue Team
-alert tcp any any -> 192.168.1.5 22 (msg:"SSH Attempt on Web Server"; sid:1000001; rev:1;)
-alert tcp any any -> 192.168.1.5 80 (msg:"HTTP Traffic to Web Server"; sid:1000002; rev:1;)
-alert tcp any any -> 192.168.1.5 443 (msg:"HTTPS Traffic to Web Server"; sid:1000003; rev:1;)
-alert udp any any -> 192.168.1.12 53 (msg:"DNS Query to DNS Server"; sid:1000004; rev:1;)
-alert tcp 192.168.1.10 any -> any 445 (msg:"SMB Traffic from Internal Kali VM"; sid:1000005; rev:1;)
-alert tcp any any -> 172.18.15.t 22 (msg:"SSH Attempt on External Kali VM"; sid:1000006; rev:1;)
+# Custom Snort Rules for N-CAE Cyber Games Blue Team
+
+# SSH Detection & Blocking
+alert tcp any any -> 192.168.12.5 22 (msg:"SSH Brute Force on Web Server"; flags:S; threshold:type both, track by_src, count 5, seconds 30; sid:1000100; rev:1;)
+alert tcp any any -> 172.18.15.12 22 (msg:"SSH Brute Force on External Kali VM"; flags:S; threshold:type both, track by_src, count 5, seconds 30; sid:1000101; rev:1;)
+
+drop tcp any any -> 192.168.12.5 22 (msg:"Blocked SSH Brute Force on Web Server"; flags:S; threshold:type both, track by_src, count 5, seconds 30; sid:2000100; rev:1;)
+drop tcp any any -> 172.18.15.12 22 (msg:"Blocked SSH Brute Force on External Kali VM"; flags:S; threshold:type both, track by_src, count 5, seconds 30; sid:2000101; rev:1;)
+
+# HTTP & HTTPS Traffic
+alert tcp any any -> 192.168.12.5 [80,443] (msg:"HTTP/S Traffic to Web Server"; sid:1000200; rev:1;)
+
+# DNS Traffic
+alert udp any any -> 192.168.12.12 53 (msg:"DNS Query to DNS Server"; sid:1000300; rev:1;)
+
+# SMB Detection & Blocking
+alert tcp 192.168.1.10 any -> any 445 (msg:"SMB Traffic from Internal Kali VM"; sid:1000400; rev:1;)
+drop tcp any any -> any 445 (msg:"Blocked Unauthorized SMB Traffic"; sid:2000400; rev:1;)
+
+# FTP Traffic (DHCP Server)
+alert tcp any any -> 172.18.14.12 21 (msg:"FTP Login Attempt to DHCP Server"; flags:S; sid:1000500; rev:1;)
+alert tcp any any -> 172.18.14.12 21 (msg:"FTP Brute Force on DHCP Server"; content:"530 Login incorrect"; threshold:type both, track by_src, count 5, seconds 30; sid:1000501; rev:1;)
+drop tcp any any -> 172.18.14.12 21 (msg:"Blocked FTP Brute Force on DHCP Server"; threshold:type both, track by_src, count 5, seconds 30; sid:2000500; rev:1;)
+
+# Database Server (SQL Traffic)
+alert tcp any any -> 192.168.12.7 5432 (msg:"SQL Query Execution on Database Server"; content:"SELECT"; nocase; sid:1000600; rev:1;)
+alert tcp any any -> 192.168.12.7 [80,443] (msg:"SQL Injection Attempt"; content:"' OR '1'='1"; nocase; sid:1000601; rev:1;)
+drop tcp any any -> 192.168.12.7 5432 (msg:"Blocked Unauthorized SQL Query"; content:"SELECT"; nocase; sid:2000600; rev:1;)
+
+# Backup Server Traffic
+alert tcp any any -> 192.168.12.15 [22,445] (msg:"Unauthorized Access Attempt on Backup Server"; sid:1000700; rev:1;)
+drop tcp any any -> 192.168.12.15 [22,445] (msg:"Blocked Unauthorized Access to Backup Server"; sid:2000700; rev:1;)
 EOF
 
 # 6. Enable IP forwarding (if monitoring via SPAN or router mirror)
@@ -90,7 +115,7 @@ else
 fi
 
 # 10. Generate test traffic to verify alerts (optional, manual step reminder)
-echo "To test alerts, generate traffic (e.g., ping, SSH, or HTTP to 192.168.1.5 or 192.168.1.12)" | tee -a "$LOG_FILE"
+echo "To test alerts, generate traffic (e.g., ping, SSH, or HTTP to 192.168.12.5 or 192.168.12.12)" | tee -a "$LOG_FILE"
 echo "Check alerts in /var/log/snort/alert" | tee -a "$LOG_FILE"
 
 echo "Snort setup completed at $(date). Check $LOG_FILE for details."
