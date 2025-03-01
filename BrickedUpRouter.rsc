@@ -3,8 +3,6 @@
 # Includes hardening, firewall rules, deception, monitoring, and advanced disruption
 
 # 1. Initial Setup and Secure Access
-# Change default admin password (using the provided strong password)
-/user set admin password=Tr0ub4dor&3x
 /user remove [find name!="admin"]
 
 # Disable unnecessary services but allow SSH and WinBox from Jumphost (172.18.12.15)
